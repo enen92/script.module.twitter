@@ -65,9 +65,18 @@ class TwitterHTTPError(TwitterError):
         if self.e.headers.get('Content-Encoding') == 'gzip':
             buf = StringIO(data)
             f = gzip.GzipFile(fileobj=buf)
-            self.response_data = f.read()
+            data = f.read()
+        if len(data) == 0:
+            data = {}
         else:
-            self.response_data = data
+            data = data.decode('utf8')
+            if "json" == self.format:
+                try:
+                    data = json.loads(data)
+                except ValueError:
+                    # We try to load the response as json as a nicety; if it fails, carry on.
+                    pass
+        self.response_data = data
         super(TwitterHTTPError, self).__init__(str(self))
 
     def __str__(self):
@@ -414,16 +423,27 @@ class Twitter(TwitterCall):
         # to force a particular method, use `_method`
         t.statuses.oembed(_id=1234567890, _method='GET')
 
-        # Send a tweet with an image included (or set your banner or logo similarily)
-        # by just reading your image from the web or a file in a string:
-        status = "PTT ★"
+        # Send images along with your tweets:
+        # - first just read images from the web or from files the regular way:
         with open("example.png", "rb") as imagefile:
-            params = {"media[]": imagefile.read(), "status": status}
+            imagedata = imagefile.read()
+        # - then upload medias one by one on Twitter's dedicated server
+        #   and collect each one's id:
+        t_up = Twitter(domain='upload.twitter.com',
+            auth=OAuth(token, token_key, con_secret, con_secret_key))
+        id_img1 = t_up.media.upload(media=imagedata)["media_id_string"]
+        id_img2 = t_up.media.upload(media=imagedata)["media_id_string"]
+
+        # - finally send your tweet with the list of media ids:
+        t.statuses.update(status="PTT ★", media_ids=",".join([id_img1, id_img2]))
+
+        # Or send a tweet with an image (or set a logo/banner similarily)
+        # using the old deprecated method that will probably disappear some day
+        params = {"media[]": imagedata, "status": "PTT ★"}
+        # Or for an image encoded as base64:
+        params = {"media[]": base64_image, "status": "PTT ★", "_base64": True}
         t.statuses.update_with_media(**params)
 
-        # Or by sending a base64 encoded image:
-        params = {"media[]": base64_image, "status": status, "_base64": True}
-        t.statuses.update_with_media(**params)
 
 
     Searching Twitter::
